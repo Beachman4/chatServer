@@ -8,8 +8,8 @@ import (
 	"github.com/rs/cors"
 	"math/rand"
 	"time"
-	"bytes"
 	"encoding/json"
+	"os"
 )
 
 const letters = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
@@ -69,17 +69,23 @@ func checkIfExists(username string) bool {
 	return true
 }
 
-func sendListOfUsers(so socketio.Socket) {
+func sendListOfUsers() {
 
 	for true {
 		time.Sleep(5 * time.Second)
-		b := new(bytes.Buffer)
-		json.NewEncoder(b).Encode(users)
-		so.Emit("userlist", b)
+		userList := make(map[string]string)
+		for _, value := range users {
+			userList[value.username] = value.username;
+		}
+		json.NewEncoder(os.Stdout).Encode(userList)
+		for _, u := range users {
+			so := u.socket
+			so.Emit("userlist", userList)
+		}
 	}
 }
 
-func deleteAllUserByName(username string) {
+func deleteAllUserByName(socket string) {
 
 }
 
@@ -101,7 +107,6 @@ func main() {
 	server.SetAdaptor(redis.Redis(opts))
 
 	server.On("connection", func (so socketio.Socket) {
-		go sendListOfUsers(so)
 		so.On("userinfo", func(msg string) {
 			if checkIfExists(msg) {
 				users[msg] = ConnectedUsers{
@@ -116,10 +121,12 @@ func main() {
 		})
 
 		so.On("disconnection", func() {
-			delete(users, so.Id())
+			deleteAllUserByName(so.Id())
 		})
 	})
 
+
+	go sendListOfUsers()
 
 
 	mux.Handle("/socket.io/", server)
