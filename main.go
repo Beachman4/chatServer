@@ -8,6 +8,8 @@ import (
 	"github.com/rs/cors"
 	"math/rand"
 	"time"
+	"bytes"
+	"encoding/json"
 )
 
 const letters = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
@@ -29,11 +31,17 @@ type Conversations struct {
 
 type ConnectedUsers struct {
 	username string
+	socket socketio.Socket
+
 }
 var users = map[string]ConnectedUsers{}
+var server, err = socketio.NewServer(nil)
 func waiteSome() {
 	for true {
 		time.Sleep(5 * time.Second)
+		server.BroadcastTo("/", "blah", func() {
+			log.Println("sent")
+		})
 		log.Println(users)
 	}
 }
@@ -53,8 +61,26 @@ func garbageCollecton() {
 	}
 }
 
+func checkIfExists(username string) bool {
+	_, ok := users[username]
+	if ok {
+		return false
+	}
+	return true
+}
+
+func sendListOfUsers(so socketio.Socket) {
+
+	for true {
+		time.Sleep(5 * time.Second)
+		b := new(bytes.Buffer)
+		json.NewEncoder(b).Encode(users)
+		so.Emit("userlist", b)
+	}
+}
+
 func deleteAllUserByName(username string) {
-	for
+
 }
 
 func main() {
@@ -63,7 +89,6 @@ func main() {
 	/*mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 	})*/
-	server, err := socketio.NewServer(nil)
 
 
 	//conversations := map[string]Conversations{}
@@ -76,9 +101,13 @@ func main() {
 	server.SetAdaptor(redis.Redis(opts))
 
 	server.On("connection", func (so socketio.Socket) {
+		go sendListOfUsers(so)
 		so.On("userinfo", func(msg string) {
-			users[so.Id()] = ConnectedUsers{
-				msg,
+			if checkIfExists(msg) {
+				users[msg] = ConnectedUsers{
+					msg,
+					so,
+				}
 			}
 		})
 
@@ -90,6 +119,8 @@ func main() {
 			delete(users, so.Id())
 		})
 	})
+
+
 
 	mux.Handle("/socket.io/", server)
 	mux.Handle("/", http.FileServer(http.Dir("./asset")))
